@@ -35,7 +35,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── LAYOUT ── */
     #app {
       display: flex;
       flex-direction: column;
@@ -45,7 +44,6 @@
       position: relative;
     }
 
-    /* ── HEADER ── */
     header {
       padding: 16px 20px 12px;
       border-bottom: 1px solid var(--border);
@@ -75,7 +73,6 @@
       text-transform: uppercase;
     }
 
-    /* ── COUNTER BAR ── */
     .stats-bar {
       display: flex;
       padding: 10px 20px;
@@ -115,7 +112,6 @@
       font-family: var(--mono);
     }
 
-    /* ── CAMERA AREA ── */
     .camera-wrap {
       position: relative;
       flex: 1;
@@ -132,7 +128,6 @@
 
     #canvas { display: none; }
 
-    /* scan frame overlay */
     .scan-overlay {
       position: absolute;
       inset: 0;
@@ -194,7 +189,6 @@
       letter-spacing: 1px;
     }
 
-    /* darkened sides */
     .vignette {
       position: absolute;
       inset: 0;
@@ -202,7 +196,6 @@
       pointer-events: none;
     }
 
-    /* ── RESULT TOAST ── */
     #toast {
       position: absolute;
       bottom: 0;
@@ -233,7 +226,7 @@
     .toast-name {
       font-weight: 700;
       font-size: 16px;
-      letter---spacing: -0.3px;
+      letter-spacing: -0.3px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -253,7 +246,6 @@
       flex-shrink: 0;
     }
 
-    /* ── START SCREEN ── */
     #start-screen {
       position: absolute;
       inset: 0;
@@ -310,7 +302,6 @@
 
     #start-btn:active { transform: scale(0.97); opacity: 0.9; }
 
-    /* ── CONFIG NOTICE ── */
     #config-notice {
       position: fixed;
       top: 0; left: 0; right: 0;
@@ -327,7 +318,6 @@
 
     #config-notice.show { display: block; }
 
-    /* ── LOG ── */
     #log-panel {
       display: none;
       position: absolute;
@@ -406,7 +396,6 @@
       flex-shrink: 0;
     }
 
-    /* ── BOTTOM NAV ── */
     .bottom-nav {
       display: flex;
       border-top: 1px solid var(--border);
@@ -437,14 +426,12 @@
 </head>
 <body>
 
-<!-- ══ CONFIG WARNING (shown if webhook not set) ══ -->
 <div id="config-notice">
   ⚠ WEBHOOK URL NOT CONFIGURED — Edit scanner.html and set N8N_WEBHOOK_URL
 </div>
 
 <div id="app">
 
-  <!-- ── START SCREEN ── -->
   <div id="start-screen">
     <div class="start-icon">📷</div>
     <div class="start-title">Event Check-In</div>
@@ -452,7 +439,6 @@
     <button id="start-btn" onclick="startCamera()">ACTIVATE SCANNER</button>
   </div>
 
-  <!-- ── LOG PANEL ── -->
   <div id="log-panel">
     <div class="log-header">
       <span>Scan Log</span>
@@ -461,13 +447,11 @@
     <div id="log-list"></div>
   </div>
 
-  <!-- ── HEADER ── -->
   <header>
     <div class="logo">CHECK-IN</div>
     <div class="gate-badge" id="gate-label">GATE: ALL</div>
   </header>
 
-  <!-- ── STATS ── -->
   <div class="stats-bar">
     <div class="stat">
       <div class="stat-val green" id="count-ok">0</div>
@@ -483,7 +467,6 @@
     </div>
   </div>
 
-  <!-- ── CAMERA ── -->
   <div class="camera-wrap">
     <video id="preview" playsinline autoplay muted></video>
     <canvas id="canvas"></canvas>
@@ -496,7 +479,6 @@
         <div class="scan-hint">ALIGN QR CODE WITHIN FRAME</div>
       </div>
     </div>
-    <!-- result toast -->
     <div id="toast">
       <div class="toast-icon" id="toast-icon">✅</div>
       <div class="toast-body">
@@ -507,7 +489,6 @@
     </div>
   </div>
 
-  <!-- ── BOTTOM NAV ── -->
   <div class="bottom-nav">
     <button class="nav-btn" onclick="openLog()">
       <span class="icon">📋</span>LOG
@@ -520,7 +501,7 @@
     </button>
   </div>
 
-</div><!-- #app -->
+</div>
 
 <script>
   /* ════════════════════════════════════════════════
@@ -528,7 +509,11 @@
      ════════════════════════════════════════════════ */
   const N8N_WEBHOOK_URL = "YOUR_N8N_WEBHOOK_URL_HERE";
   // Example: "https://your-n8n.app.n8n.cloud/webhook/checkin"
-  // Leave as-is until you set up n8n — scans will be logged locally only.
+
+  const CHECKIN_SECRET_KEY = "YOUR_SECRET_KEY_HERE";
+  // ⬆️ Ye wahi key daalo jo n8n Webhook node mein Header Auth mein set ki hai
+  // Example: "TechSummit2025@Checkin#Key9x"
+  // Event ke baad is key ko zaroor change karo!
 
   /* ════════════════════════════════════════════════ */
 
@@ -600,10 +585,8 @@
     const now = new Date();
     const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // Vibrate on scan
     if (navigator.vibrate) navigator.vibrate(80);
 
-    // Send to n8n
     let success = false;
     let responseMsg = 'Logged locally (no webhook)';
 
@@ -611,7 +594,10 @@
       try {
         const res = await fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-checkin-key': CHECKIN_SECRET_KEY   // ✅ HEADER AUTH — n8n se match hona chahiye
+          },
           body: JSON.stringify({
             qr_data:    data,
             gate:       gate,
@@ -630,19 +616,15 @@
       }
     }
 
-    // Determine result type
     const isError = !success && N8N_WEBHOOK_URL !== "YOUR_N8N_WEBHOOK_URL_HERE";
     if (isError) { counts.err++; } else { counts.ok++; }
     updateStats();
 
-    // Log entry
     const logEntry = { data, time: timeStr, ok: !isError };
     scanLog.unshift(logEntry);
 
-    // Show toast
     showToast(data, responseMsg, timeStr, isError ? 'error' : 'success');
 
-    // Reset cooldown after 2s
     setTimeout(() => { cooldown = false; }, 2000);
   }
 
@@ -662,7 +644,6 @@
     document.getElementById('count-total').textContent = counts.total;
   }
 
-  // ── Torch ──
   async function toggleTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -675,7 +656,6 @@
     }
   }
 
-  // ── Log panel ──
   function openLog() {
     const list = document.getElementById('log-list');
     list.innerHTML = '';
@@ -700,7 +680,6 @@
     document.getElementById('log-panel').classList.remove('open');
   }
 
-  // ── Reset ──
   function resetCounters() {
     if (!confirm('Reset all counters?')) return;
     counts = { ok: 0, err: 0, total: 0 };
