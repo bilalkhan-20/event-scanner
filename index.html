@@ -848,28 +848,59 @@
   function scanFromImage(event) {
     const file = event.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = function(e) {
       const img = new Image();
       img.onload = function() {
-        const offCanvas  = document.createElement('canvas');
-        offCanvas.width  = img.width;
-        offCanvas.height = img.height;
-        const offCtx     = offCanvas.getContext('2d');
-        offCtx.drawImage(img, 0, 0);
-        const imageData  = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
-        const code       = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+        // Phone cameras produce huge images. Try multiple scaled-down sizes
+        // for best jsQR detection — 800-1200px wide is the sweet spot.
+        const targetWidths = [1000, 800, 600, 1400, img.width];
+        let code = null;
+
+        for (const targetW of targetWidths) {
+          const scale = Math.min(1, targetW / img.width);
+          const w = Math.floor(img.width  * scale);
+          const h = Math.floor(img.height * scale);
+
+          const offCanvas  = document.createElement('canvas');
+          offCanvas.width  = w;
+          offCanvas.height = h;
+          const offCtx = offCanvas.getContext('2d');
+          offCtx.imageSmoothingEnabled = true;
+          offCtx.imageSmoothingQuality = 'high';
+          offCtx.drawImage(img, 0, 0, w, h);
+
+          const imageData = offCtx.getImageData(0, 0, w, h);
+          code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth'
+          });
+          if (code) break;
+        }
+
+        const timeStr = new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+
         if (code) {
           if (!cooldown) onScan(code.data);
         } else {
-          const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          showToast('No QR Code Found', 'Could not detect a QR code in this image', timeStr, 'warning');
+          showToast('No QR Code Found', 'Make sure QR is clear, well-lit and not cropped', timeStr, 'warning');
         }
       };
+
+      img.onerror = function() {
+        const timeStr = new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        showToast('Image Error', 'Could not load the selected image', timeStr, 'error');
+      };
+
       img.src = e.target.result;
     };
+
     reader.readAsDataURL(file);
-    event.target.value = '';
+    setTimeout(() => { event.target.value = ''; }, 500);
   }
 </script>
 </body>
