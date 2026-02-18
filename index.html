@@ -599,7 +599,7 @@
             'x-checkin-key': CHECKIN_SECRET_KEY   // ✅ HEADER AUTH — n8n se match hona chahiye
           },
           body: JSON.stringify({
-            qr_data:    data,
+            token:    data,
             gate:       gate,
             timestamp:  now.toISOString(),
             device:     navigator.userAgent
