@@ -1,449 +1,783 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import jsQR from "jsqr";
-import { Camera, Upload, ScanLine, Copy, ExternalLink, X, CheckCircle2, AlertCircle } from "lucide-react";
-
-type ScanMode = "camera" | "upload";
-type ScanResult = {
-  data: string;
-  location: { x: number; y: number; width: number; height: number } | null;
-};
-
-const Index = () => {
-  const [mode, setMode] = useState<ScanMode>("upload");
-  const [result, setResult] = useState<ScanResult | null>(null);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number>(0);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    cancelAnimationFrame(animFrameRef.current);
-    setCameraActive(false);
-  }, []);
-
-  const startCamera = useCallback(async () => {
-    setResult(null);
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraActive(true);
-        scanCameraFrame();
-      }
-    } catch {
-      setError("Camera access denied. Please allow camera permission.");
-    }
-  }, []);
-
-  const scanCameraFrame = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      animFrameRef.current = requestAnimationFrame(scanCameraFrame);
-      return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QR Scanner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #13131a;
+      --surface2: #1c1c27;
+      --border: #2a2a3d;
+      --accent: #00e5a0;
+      --accent2: #7b61ff;
+      --text: #e8e8f0;
+      --text-muted: #6b6b88;
+      --danger: #ff4f6e;
+      --radius: 16px;
     }
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-    if (code) {
-      const loc = code.location;
-      const x = Math.min(loc.topLeftCorner.x, loc.bottomLeftCorner.x);
-      const y = Math.min(loc.topLeftCorner.y, loc.topRightCorner.y);
-      const w = Math.max(loc.topRightCorner.x, loc.bottomRightCorner.x) - x;
-      const h = Math.max(loc.bottomLeftCorner.y, loc.bottomRightCorner.y) - y;
-
-      // Draw box on canvas
-      ctx.strokeStyle = "hsl(160, 84%, 44%)";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(x - 8, y - 8, w + 16, h + 16);
-
-      // Corner accents
-      const cornerLen = 20;
-      ctx.lineWidth = 6;
-      // Top-left
-      ctx.beginPath(); ctx.moveTo(x - 8, y - 8 + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x - 8 + cornerLen, y - 8); ctx.stroke();
-      // Top-right
-      ctx.beginPath(); ctx.moveTo(x + w + 8 - cornerLen, y - 8); ctx.lineTo(x + w + 8, y - 8); ctx.lineTo(x + w + 8, y - 8 + cornerLen); ctx.stroke();
-      // Bottom-left
-      ctx.beginPath(); ctx.moveTo(x - 8, y + h + 8 - cornerLen); ctx.lineTo(x - 8, y + h + 8); ctx.lineTo(x - 8 + cornerLen, y + h + 8); ctx.stroke();
-      // Bottom-right
-      ctx.beginPath(); ctx.moveTo(x + w + 8 - cornerLen, y + h + 8); ctx.lineTo(x + w + 8, y + h + 8); ctx.lineTo(x + w + 8, y + h + 8 - cornerLen); ctx.stroke();
-
-      setResult({ data: code.data, location: { x, y, width: w, height: h } });
-      stopCamera();
-      return;
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+      overflow-x: hidden;
     }
 
-    animFrameRef.current = requestAnimationFrame(scanCameraFrame);
-  }, [stopCamera]);
-
-  useEffect(() => {
-    return () => {
-      stopCamera();
-    };
-  }, [stopCamera]);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setResult(null);
-    setError(null);
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setUploadedImage(dataUrl);
-
-      const img = new Image();
-      img.onload = () => {
-        imageRef.current = img;
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const scanUploadedImage = () => {
-    const img = imageRef.current;
-    const canvas = canvasRef.current;
-    if (!img || !canvas) return;
-
-    setIsScanning(true);
-    setError(null);
-
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
-
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-    setTimeout(() => {
-      if (code) {
-        const loc = code.location;
-        const x = Math.min(loc.topLeftCorner.x, loc.bottomLeftCorner.x);
-        const y = Math.min(loc.topLeftCorner.y, loc.topRightCorner.y);
-        const w = Math.max(loc.topRightCorner.x, loc.bottomRightCorner.x) - x;
-        const h = Math.max(loc.bottomLeftCorner.y, loc.bottomRightCorner.y) - y;
-
-        // Draw the image again and overlay box
-        ctx.drawImage(img, 0, 0);
-        ctx.strokeStyle = "hsl(160, 84%, 44%)";
-        ctx.lineWidth = Math.max(4, Math.min(img.width, img.height) * 0.008);
-        ctx.strokeRect(x - 10, y - 10, w + 20, h + 20);
-
-        const cornerLen = Math.max(15, Math.min(w, h) * 0.15);
-        ctx.lineWidth = Math.max(6, Math.min(img.width, img.height) * 0.012);
-        ctx.beginPath(); ctx.moveTo(x - 10, y - 10 + cornerLen); ctx.lineTo(x - 10, y - 10); ctx.lineTo(x - 10 + cornerLen, y - 10); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + w + 10 - cornerLen, y - 10); ctx.lineTo(x + w + 10, y - 10); ctx.lineTo(x + w + 10, y - 10 + cornerLen); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x - 10, y + h + 10 - cornerLen); ctx.lineTo(x - 10, y + h + 10); ctx.lineTo(x - 10 + cornerLen, y + h + 10); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x + w + 10 - cornerLen, y + h + 10); ctx.lineTo(x + w + 10, y + h + 10); ctx.lineTo(x + w + 10, y + h + 10 - cornerLen); ctx.stroke();
-
-        // Semi-transparent overlay outside QR
-        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-        ctx.fillRect(0, 0, canvas.width, y - 10);
-        ctx.fillRect(0, y - 10, x - 10, h + 20);
-        ctx.fillRect(x + w + 10, y - 10, canvas.width - x - w - 10, h + 20);
-        ctx.fillRect(0, y + h + 10, canvas.width, canvas.height - y - h - 10);
-
-        setResult({ data: code.data, location: { x, y, width: w, height: h } });
-      } else {
-        setError("No QR code found in this image.");
-      }
-      setIsScanning(false);
-    }, 500);
-  };
-
-  const copyResult = () => {
-    if (result) {
-      navigator.clipboard.writeText(result.data);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    /* Background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
     }
-  };
 
-  const isUrl = (s: string) => {
-    try { new URL(s); return true; } catch { return false; }
-  };
-
-  const resetAll = () => {
-    stopCamera();
-    setResult(null);
-    setUploadedImage(null);
-    setError(null);
-    setIsScanning(false);
-    imageRef.current = null;
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 600px;
     }
-  };
 
-  const switchMode = (newMode: ScanMode) => {
-    resetAll();
-    setMode(newMode);
-  };
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <ScanLine className="w-5 h-5 text-primary" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground font-mono tracking-tight">
-            QR Scanner
-          </h1>
-        </div>
-        <p className="text-muted-foreground text-sm">
-          Scan QR codes with your camera or upload an image
-        </p>
-      </div>
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,229,160,0.08);
+      border: 1px solid rgba(0,229,160,0.2);
+      color: var(--accent);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      margin-bottom: 20px;
+    }
 
-      {/* Mode Toggle */}
-      <div className="flex bg-secondary rounded-lg p-1 mb-8 gap-1">
-        <button
-          onClick={() => switchMode("camera")}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-all ${
-            mode === "camera"
-              ? "bg-primary text-primary-foreground shadow-lg"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Camera className="w-4 h-4" />
+    .header-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    h1 {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(28px, 6vw, 42px);
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1.1;
+    }
+
+    h1 span {
+      color: var(--accent);
+      text-shadow: 0 0 30px rgba(0,229,160,0.4);
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    /* Mode Toggle */
+    .mode-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .mode-btn.active {
+      color: var(--accent);
+      background: rgba(0,229,160,0.05);
+    }
+
+    .mode-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }
+
+    .mode-btn svg { width: 16px; height: 16px; }
+
+    /* Scanner Area */
+    .scanner-area {
+      padding: 24px;
+      min-height: 340px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    /* Upload Zone */
+    .upload-zone {
+      width: 100%;
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      position: relative;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--accent);
+      background: rgba(0,229,160,0.03);
+    }
+
+    .upload-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .upload-icon {
+      width: 52px; height: 52px;
+      background: rgba(0,229,160,0.1);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+    }
+
+    .upload-icon svg { width: 24px; height: 24px; color: var(--accent); }
+
+    .upload-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .upload-sub { font-size: 13px; color: var(--text-muted); }
+
+    /* Camera Container */
+    .camera-container {
+      width: 100%;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    #video.active { display: block; }
+
+    #canvas { display: none; }
+
+    .canvas-display {
+      width: 100%;
+      border-radius: 12px;
+      display: block;
+    }
+
+    /* Camera overlay */
+    .cam-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .scan-line {
+      position: absolute;
+      left: 10%; right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      box-shadow: 0 0 12px var(--accent);
+      animation: scanLine 2s ease-in-out infinite;
+      top: 20%;
+    }
+
+    @keyframes scanLine {
+      0%, 100% { top: 20%; opacity: 0; }
+      10%, 90% { opacity: 1; }
+      50% { top: 80%; }
+    }
+
+    .corner { position: absolute; width: 24px; height: 24px; }
+    .corner::before, .corner::after {
+      content: '';
+      position: absolute;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .corner::before { height: 3px; top: 0; }
+    .corner::after { width: 3px; top: 0; }
+
+    .corner.tl { top: 10%; left: 10%; }
+    .corner.tl::before { left: 0; right: 0; }
+    .corner.tl::after { left: 0; bottom: 0; }
+
+    .corner.tr { top: 10%; right: 10%; transform: scaleX(-1); }
+    .corner.tr::before { left: 0; right: 0; }
+    .corner.tr::after { left: 0; bottom: 0; }
+
+    .corner.bl { bottom: 10%; left: 10%; transform: scaleY(-1); }
+    .corner.bl::before { left: 0; right: 0; }
+    .corner.bl::after { left: 0; bottom: 0; }
+
+    .corner.br { bottom: 10%; right: 10%; transform: scale(-1); }
+    .corner.br::before { left: 0; right: 0; }
+    .corner.br::after { left: 0; bottom: 0; }
+
+    /* Placeholder */
+    .cam-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 40px;
+      text-align: center;
+      width: 100%;
+    }
+
+    .cam-placeholder svg { color: var(--text-muted); width: 48px; height: 48px; }
+    .cam-placeholder p { color: var(--text-muted); font-size: 13px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 24px;
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+    }
+
+    .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-ghost {
+      background: rgba(255,255,255,0.05);
+      color: var(--text-muted);
+    }
+
+    .btn-ghost:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn svg { width: 16px; height: 16px; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error */
+    .error-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,79,110,0.08);
+      border: 1px solid rgba(255,79,110,0.25);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: var(--danger);
+      font-size: 13px;
+      width: 100%;
+    }
+
+    .error-box svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    /* Result */
+    .result-box {
+      width: 100%;
+      border-top: 1px solid var(--border);
+      padding: 24px;
+    }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .result-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0,229,160,0.1);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 100px;
+    }
+
+    .result-badge svg { width: 13px; height: 13px; }
+
+    .result-text {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-all;
+      margin-bottom: 14px;
+      font-family: 'Space Mono', monospace;
+      color: var(--text);
+    }
+
+    .result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .footer {
+      text-align: center;
+      margin-top: 28px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .footer a { color: var(--accent); text-decoration: none; }
+
+    /* Utility */
+    .hidden { display: none; }
+
+    /* Copied state */
+    .btn-copied {
+      background: rgba(0,229,160,0.15) !important;
+      color: var(--accent) !important;
+      border-color: rgba(0,229,160,0.4) !important;
+    }
+
+    @media (max-width: 480px) {
+      .scanner-area { padding: 16px; }
+      .result-box { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-badge">QR SCANNER</div>
+      <h1>Scan <span>QR</span> Codes</h1>
+      <p class="subtitle">Camera se scan karo ya image upload karo — sab kuch locally process hota hai</p>
+    </div>
+
+    <!-- Card -->
+    <div class="card">
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="btn-camera" onclick="switchMode('camera')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           Camera
         </button>
-        <button
-          onClick={() => switchMode("upload")}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-all ${
-            mode === "upload"
-              ? "bg-primary text-primary-foreground shadow-lg"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Upload className="w-4 h-4" />
+        <button class="mode-btn" id="btn-upload" onclick="switchMode('upload')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Upload
         </button>
       </div>
 
-      {/* Scanner Area */}
-      <div className="w-full max-w-lg">
-        <div className="bg-card border border-border rounded-xl overflow-hidden scanner-glow">
-          {/* Camera Mode */}
-          {mode === "camera" && (
-            <div className="relative">
-              {!cameraActive && !result && (
-                <div className="aspect-[4/3] flex flex-col items-center justify-center gap-4 bg-secondary/30">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-primary/30 flex items-center justify-center">
-                    <Camera className="w-8 h-8 text-primary/50" />
-                  </div>
-                  <button
-                    onClick={startCamera}
-                    className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity"
-                  >
-                    Start Camera
-                  </button>
-                </div>
-              )}
-              <video
-                ref={videoRef}
-                className={`w-full aspect-[4/3] object-cover ${cameraActive ? "block" : "hidden"}`}
-                playsInline
-                muted
-              />
-              {cameraActive && (
-                <div className="absolute inset-0 pointer-events-none">
-                  {/* Scan line animation */}
-                  <div className="absolute left-[15%] right-[15%] top-[15%] bottom-[15%]">
-                    <div className="relative w-full h-full">
-                      <div className="absolute left-0 right-0 h-1 scan-line animate-scan" />
-                      {/* Corner brackets */}
-                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-primary" />
-                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-primary" />
-                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-primary" />
-                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary" />
-                    </div>
-                  </div>
-                </div>
-              )}
-              {/* Canvas for camera result display */}
-              <canvas
-                ref={result && mode === "camera" ? canvasRef : undefined}
-                className={result && mode === "camera" ? "w-full" : "hidden"}
-              />
-            </div>
-          )}
+      <!-- Scanner Area -->
+      <div class="scanner-area" id="scanner-area">
 
-          {/* Upload Mode */}
-          {mode === "upload" && (
-            <div>
-              {!uploadedImage && !result && (
-                <label className="aspect-[4/3] flex flex-col items-center justify-center gap-4 bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-primary/30 flex items-center justify-center pulse-border">
-                    <Upload className="w-8 h-8 text-primary/50" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-foreground">Click to upload image</p>
-                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP supported</p>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </label>
-              )}
-
-              {/* Show uploaded image before scan, canvas after scan */}
-              {uploadedImage && (
-                <div className="relative">
-                  <img
-                    src={uploadedImage}
-                    alt="Uploaded"
-                    className={`w-full object-contain max-h-[400px] bg-secondary/20 ${result ? "hidden" : "block"}`}
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    className={`w-full object-contain ${result ? "block" : "hidden"}`}
-                  />
-                  <button
-                    onClick={resetAll}
-                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-background/80 backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
+        <!-- CAMERA MODE -->
+        <div id="camera-section" style="width:100%;">
+          <div class="camera-container" id="camera-container">
+            <!-- Placeholder -->
+            <div class="cam-placeholder" id="cam-placeholder">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <p>Camera start karo aur QR code saamne rakkho</p>
             </div>
-          )}
+            <!-- Video -->
+            <video id="video" playsinline autoplay muted></video>
+            <!-- Overlay -->
+            <div class="cam-overlay hidden" id="cam-overlay">
+              <div class="scan-line"></div>
+              <div class="corner tl"></div>
+              <div class="corner tr"></div>
+              <div class="corner bl"></div>
+              <div class="corner br"></div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:center;margin-top:16px;">
+            <button class="btn btn-primary" id="start-camera-btn" onclick="startCamera()">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+              Camera Start Karo
+            </button>
+            <button class="btn btn-ghost hidden" id="stop-camera-btn" onclick="stopCamera()" style="margin-left:8px;">
+              Stop
+            </button>
+          </div>
         </div>
 
-        {/* Scan Button for Upload Mode */}
-        {mode === "upload" && uploadedImage && !result && (
-          <button
-            onClick={scanUploadedImage}
-            disabled={isScanning}
-            className="w-full mt-4 py-3.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isScanning ? (
-              <>
-                <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                Scanning...
-              </>
-            ) : (
-              <>
-                <ScanLine className="w-4 h-4" />
-                Scan QR Code
-              </>
-            )}
-          </button>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-            <p className="text-sm text-destructive">{error}</p>
+        <!-- UPLOAD MODE (hidden initially) -->
+        <div id="upload-section" class="hidden" style="width:100%;">
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" accept="image/*" id="file-input" onchange="handleFile(event)" />
+            <div class="upload-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <div class="upload-title">Image yahan drop karo ya click karo</div>
+            <div class="upload-sub">PNG, JPG, WEBP support hai</div>
           </div>
-        )}
-
-        {/* Result */}
-        {result && (
-          <div className="mt-4 bg-card border border-primary/20 rounded-xl p-5 scanner-glow">
-            <div className="flex items-center gap-2 mb-3">
-              <CheckCircle2 className="w-5 h-5 text-primary" />
-              <span className="text-sm font-semibold text-primary">QR Code Detected</span>
-            </div>
-            <div className="bg-secondary rounded-lg p-4 font-mono text-sm text-foreground break-all">
-              {result.data}
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={copyResult}
-                className="flex-1 py-2.5 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-accent transition-colors"
-              >
-                {copied ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    Copy
-                  </>
-                )}
-              </button>
-              {isUrl(result.data) && (
-                <a
-                  href={result.data}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Open Link
-                </a>
-              )}
-            </div>
+          <!-- Canvas result for upload -->
+          <canvas id="upload-canvas" class="canvas-display hidden" style="margin-top:12px;"></canvas>
+          <!-- Scan btn -->
+          <div style="display:flex;justify-content:center;margin-top:16px;" id="scan-btn-row">
+            <button class="btn btn-primary" id="scan-btn" onclick="scanUploadedImage()" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Scan QR Code
+            </button>
           </div>
-        )}
+        </div>
 
-        {/* Scan Again */}
-        {(result || error) && (
-          <button
-            onClick={resetAll}
-            className="w-full mt-3 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium hover:bg-accent transition-colors"
-          >
-            Scan Another
-          </button>
-        )}
+        <!-- Error -->
+        <div class="error-box hidden" id="error-box" style="margin-top:0;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span id="error-text"></span>
+        </div>
+
       </div>
 
-      {/* Footer */}
-      <p className="mt-12 text-xs text-muted-foreground font-mono">
-        Built with jsQR • All processing happens locally
-      </p>
-
-      {/* Hidden canvas for camera mode processing */}
-      {mode === "camera" && !result && (
-        <canvas ref={canvasRef} className="hidden" />
-      )}
+      <!-- Result -->
+      <div class="result-box hidden" id="result-box">
+        <div class="result-header">
+          <div class="result-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            QR Code Mila!
+          </div>
+        </div>
+        <div class="result-text" id="result-text"></div>
+        <div class="result-actions">
+          <button class="btn btn-outline" id="copy-btn" onclick="copyResult()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy Karo
+          </button>
+          <a class="btn btn-outline hidden" id="open-link-btn" href="#" target="_blank" rel="noopener">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Link Kholو
+          </a>
+          <button class="btn btn-ghost" onclick="resetAll()">
+            Dobara Scan Karo
+          </button>
+        </div>
+      </div>
     </div>
-  );
-};
 
-export default Index;
+    <!-- Hidden canvas for camera processing -->
+    <canvas id="process-canvas" class="hidden"></canvas>
+
+    <div class="footer">
+      Powered by jsQR &mdash; Sab kuch locally process hota hai, koi data nahi jaata
+    </div>
+  </div>
+
+  <script>
+    let currentMode = 'camera';
+    let stream = null;
+    let animFrame = null;
+    let uploadedImg = null;
+    let scanning = false;
+
+    // ---- MODE SWITCH ----
+    function switchMode(mode) {
+      resetAll();
+      currentMode = mode;
+      document.getElementById('btn-camera').classList.toggle('active', mode === 'camera');
+      document.getElementById('btn-upload').classList.toggle('active', mode === 'upload');
+      document.getElementById('camera-section').classList.toggle('hidden', mode !== 'camera');
+      document.getElementById('upload-section').classList.toggle('hidden', mode !== 'upload');
+    }
+
+    // ---- CAMERA ----
+    async function startCamera() {
+      clearError(); clearResult();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        const video = document.getElementById('video');
+        video.srcObject = stream;
+        await video.play();
+        video.classList.add('active');
+        document.getElementById('cam-placeholder').classList.add('hidden');
+        document.getElementById('cam-overlay').classList.remove('hidden');
+        document.getElementById('start-camera-btn').classList.add('hidden');
+        document.getElementById('stop-camera-btn').classList.remove('hidden');
+        scanCameraFrame();
+      } catch(e) {
+        showError('Camera access denied. Please allow camera permission.');
+      }
+    }
+
+    function stopCamera() {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+      const video = document.getElementById('video');
+      video.classList.remove('active');
+      document.getElementById('cam-placeholder').classList.remove('hidden');
+      document.getElementById('cam-overlay').classList.add('hidden');
+      document.getElementById('start-camera-btn').classList.remove('hidden');
+      document.getElementById('stop-camera-btn').classList.add('hidden');
+    }
+
+    function scanCameraFrame() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('process-canvas');
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        animFrame = requestAnimationFrame(scanCameraFrame);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        stopCamera();
+        showResult(code.data);
+        return;
+      }
+      animFrame = requestAnimationFrame(scanCameraFrame);
+    }
+
+    // ---- UPLOAD ----
+    function handleFile(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      clearError(); clearResult();
+      uploadedImg = null;
+      document.getElementById('upload-canvas').classList.add('hidden');
+      document.getElementById('scan-btn').style.display = 'none';
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          uploadedImg = img;
+          // Show preview on canvas
+          const canvas = document.getElementById('upload-canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          canvas.classList.remove('hidden');
+          document.getElementById('scan-btn').style.display = '';
+          document.getElementById('upload-zone').style.display = 'none';
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function scanUploadedImage() {
+      if (!uploadedImg || scanning) return;
+      scanning = true;
+      clearError(); clearResult();
+      const btn = document.getElementById('scan-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div> Scanning...';
+
+      setTimeout(() => {
+        const canvas = document.getElementById('upload-canvas');
+        const img = uploadedImg;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+        if (code) {
+          const loc = code.location;
+          const x = Math.min(loc.topLeftCorner.x, loc.bottomLeftCorner.x);
+          const y = Math.min(loc.topLeftCorner.y, loc.topRightCorner.y);
+          const w = Math.max(loc.topRightCorner.x, loc.bottomRightCorner.x) - x;
+          const h = Math.max(loc.bottomLeftCorner.y, loc.bottomRightCorner.y) - y;
+
+          ctx.drawImage(img, 0, 0);
+
+          // Dim overlay
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Clear QR area
+          ctx.clearRect(x - 12, y - 12, w + 24, h + 24);
+          ctx.drawImage(img, x - 12, y - 12, w + 24, h + 24, x - 12, y - 12, w + 24, h + 24);
+
+          // Accent box
+          const lw = Math.max(4, Math.min(img.width, img.height) * 0.006);
+          ctx.strokeStyle = '#00e5a0';
+          ctx.lineWidth = lw;
+          ctx.shadowColor = '#00e5a0';
+          ctx.shadowBlur = 16;
+          ctx.strokeRect(x - 10, y - 10, w + 20, h + 20);
+          ctx.shadowBlur = 0;
+
+          showResult(code.data);
+        } else {
+          showError('Is image mein koi QR code nahi mila.');
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Scan QR Code';
+        scanning = false;
+      }, 400);
+    }
+
+    // ---- RESULT ----
+    function showResult(data) {
+      document.getElementById('result-text').textContent = data;
+      document.getElementById('result-box').classList.remove('hidden');
+      // Check URL
+      let isUrl = false;
+      try { new URL(data); isUrl = true; } catch {}
+      const linkBtn = document.getElementById('open-link-btn');
+      if (isUrl) {
+        linkBtn.href = data;
+        linkBtn.classList.remove('hidden');
+      } else {
+        linkBtn.classList.add('hidden');
+      }
+    }
+
+    function clearResult() {
+      document.getElementById('result-box').classList.add('hidden');
+      document.getElementById('result-text').textContent = '';
+      document.getElementById('open-link-btn').classList.add('hidden');
+    }
+
+    function copyResult() {
+      const text = document.getElementById('result-text').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.classList.add('btn-copied');
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+        setTimeout(() => {
+          btn.classList.remove('btn-copied');
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Karo';
+        }, 2000);
+      });
+    }
+
+    // ---- ERROR ----
+    function showError(msg) {
+      document.getElementById('error-text').textContent = msg;
+      document.getElementById('error-box').classList.remove('hidden');
+    }
+
+    function clearError() {
+      document.getElementById('error-box').classList.add('hidden');
+    }
+
+    // ---- RESET ----
+    function resetAll() {
+      stopCamera();
+      clearResult();
+      clearError();
+      uploadedImg = null;
+      scanning = false;
+      // Reset upload UI
+      document.getElementById('upload-zone').style.display = '';
+      document.getElementById('upload-canvas').classList.add('hidden');
+      document.getElementById('scan-btn').style.display = 'none';
+      document.getElementById('file-input').value = '';
+      const uc = document.getElementById('upload-canvas');
+      const ctx = uc.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, uc.width, uc.height);
+    }
+
+    // Init: show camera mode
+    switchMode('camera');
+  </script>
+</body>
+</html>
