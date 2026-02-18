@@ -1,1073 +1,449 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Event Check-In Scanner</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #060912;
-    --surface: #0d1424;
-    --border: #1a2540;
-    --accent: #00d4ff;
-    --accent2: #7b61ff;
-    --text: #e8edf5;
-    --muted: #4a5568;
-    --success: #00ff88;
-    --warning: #ffaa00;
-    --danger: #ff4466;
-    --info: #4488ff;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Syne', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-    position: relative;
-  }
-
-  /* Animated background grid */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  body::after {
-    content: '';
-    position: fixed;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(ellipse at 30% 20%, rgba(0,212,255,0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 70% 80%, rgba(123,97,255,0.06) 0%, transparent 50%);
-    pointer-events: none;
-    z-index: 0;
-    animation: drift 20s ease-in-out infinite alternate;
-  }
-
-  @keyframes drift {
-    0% { transform: translate(0, 0); }
-    100% { transform: translate(30px, -20px); }
-  }
-
-  .container {
-    position: relative;
-    z-index: 1;
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 20px 16px 40px;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Header */
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 0 24px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 24px;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .logo-icon {
-    width: 36px;
-    height: 36px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-  }
-
-  .logo-text {
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .status-dot {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    font-family: 'Space Mono', monospace;
-    color: var(--muted);
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--success);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
-  }
-
-  /* Gate selector */
-  .gate-bar {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 16px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .gate-label {
-    font-size: 11px;
-    font-family: 'Space Mono', monospace;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    white-space: nowrap;
-  }
-
-  .gate-select {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: var(--accent);
-    font-family: 'Space Mono', monospace;
-    font-size: 13px;
-    font-weight: 700;
-    outline: none;
-    cursor: pointer;
-  }
-
-  .gate-select option {
-    background: var(--surface);
-    color: var(--text);
-  }
-
-  /* Tab switcher */
-  .tabs {
-    display: flex;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 4px;
-    margin-bottom: 20px;
-    gap: 4px;
-  }
-
-  .tab {
-    flex: 1;
-    padding: 10px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    font-family: 'Syne', sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
-
-  .tab.active {
-    background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(123,97,255,0.15));
-    color: var(--accent);
-    border: 1px solid rgba(0,212,255,0.3);
-  }
-
-  /* Scanner area */
-  .scanner-wrap {
-    position: relative;
-    border-radius: 16px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    margin-bottom: 20px;
-  }
-
-  #reader {
-    width: 100%;
-  }
-
-  #reader video {
-    border-radius: 0 !important;
-  }
-
-  /* Custom scanner overlay */
-  .scan-overlay {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .scan-frame {
-    width: 200px;
-    height: 200px;
-    position: relative;
-  }
-
-  .scan-frame::before,
-  .scan-frame::after,
-  .scan-frame span::before,
-  .scan-frame span::after {
-    content: '';
-    position: absolute;
-    width: 24px;
-    height: 24px;
-    border-color: var(--accent);
-    border-style: solid;
-  }
-
-  .scan-frame::before { top: 0; left: 0; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-  .scan-frame::after { top: 0; right: 0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-  .scan-frame span::before { bottom: 0; left: 0; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-  .scan-frame span::after { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
-
-  .scan-line {
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: scanline 2s ease-in-out infinite;
-    box-shadow: 0 0 8px var(--accent);
-  }
-
-  @keyframes scanline {
-    0% { top: 10px; opacity: 0; }
-    10% { opacity: 1; }
-    90% { opacity: 1; }
-    100% { top: 188px; opacity: 0; }
-  }
-
-  /* Upload area */
-  .upload-area {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border: 2px dashed var(--border);
-    border-radius: 16px;
-    padding: 40px 20px;
-    cursor: pointer;
-    transition: all 0.3s;
-    background: var(--surface);
-    margin-bottom: 20px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .upload-area.active-tab {
-    display: flex;
-  }
-
-  .upload-area:hover, .upload-area.dragover {
-    border-color: var(--accent);
-    background: rgba(0,212,255,0.05);
-  }
-
-  .upload-icon {
-    font-size: 48px;
-    margin-bottom: 12px;
-    filter: grayscale(0.3);
-  }
-
-  .upload-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 6px;
-  }
-
-  .upload-sub {
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'Space Mono', monospace;
-    text-align: center;
-    line-height: 1.6;
-  }
-
-  #file-input { display: none; }
-
-  .upload-btn {
-    margin-top: 16px;
-    padding: 10px 24px;
-    background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(123,97,255,0.2));
-    border: 1px solid rgba(0,212,255,0.4);
-    border-radius: 8px;
-    color: var(--accent);
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .upload-btn:hover {
-    background: linear-gradient(135deg, rgba(0,212,255,0.3), rgba(123,97,255,0.3));
-  }
-
-  /* Preview image */
-  #preview-wrap {
-    display: none;
-    margin-bottom: 20px;
-    border-radius: 16px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    position: relative;
-  }
-
-  #preview-img {
-    width: 100%;
-    max-height: 300px;
-    object-fit: contain;
-    background: var(--surface);
-    display: block;
-  }
-
-  .preview-clear {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 30px;
-    height: 30px;
-    background: rgba(0,0,0,0.7);
-    border: 1px solid var(--border);
-    border-radius: 50%;
-    color: var(--text);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-
-  .preview-clear:hover { background: rgba(255,68,102,0.3); border-color: var(--danger); }
-
-  /* Result overlay */
-  .result-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    backdrop-filter: blur(8px);
-    animation: fadeIn 0.2s ease;
-  }
-
-  .result-overlay.show { display: flex; }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .result-card {
-    background: var(--surface);
-    border-radius: 24px;
-    padding: 32px 24px;
-    max-width: 360px;
-    width: 100%;
-    text-align: center;
-    animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    position: relative;
-    overflow: hidden;
-  }
-
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(40px) scale(0.95); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-
-  .result-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 4px;
-  }
-
-  .result-card.checked_in { border: 1px solid var(--success); }
-  .result-card.checked_in::before { background: var(--success); }
-  .result-overlay.checked_in { background: rgba(0,255,136,0.1); }
-
-  .result-card.duplicate { border: 1px solid var(--warning); }
-  .result-card.duplicate::before { background: var(--warning); }
-  .result-overlay.duplicate { background: rgba(255,170,0,0.1); }
-
-  .result-card.waitlist { border: 1px solid var(--info); }
-  .result-card.waitlist::before { background: var(--info); }
-  .result-overlay.waitlist { background: rgba(68,136,255,0.1); }
-
-  .result-card.not_found,
-  .result-card.cancelled,
-  .result-card.error { border: 1px solid var(--danger); }
-  .result-card.not_found::before,
-  .result-card.cancelled::before,
-  .result-card.error::before { background: var(--danger); }
-  .result-overlay.not_found,
-  .result-overlay.cancelled,
-  .result-overlay.error { background: rgba(255,68,102,0.1); }
-
-  .result-emoji { font-size: 56px; margin-bottom: 12px; display: block; }
-
-  .result-status {
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-    margin-bottom: 8px;
-  }
-
-  .result-card.checked_in .result-status { color: var(--success); }
-  .result-card.duplicate .result-status { color: var(--warning); }
-  .result-card.waitlist .result-status { color: var(--info); }
-  .result-card.not_found .result-status,
-  .result-card.cancelled .result-status,
-  .result-card.error .result-status { color: var(--danger); }
-
-  .result-name {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--text);
-    margin-bottom: 6px;
-    letter-spacing: -1px;
-  }
-
-  .result-detail {
-    font-size: 13px;
-    font-family: 'Space Mono', monospace;
-    color: var(--muted);
-    line-height: 1.8;
-    margin-bottom: 20px;
-  }
-
-  .result-close {
-    width: 100%;
-    padding: 14px;
-    border-radius: 12px;
-    border: none;
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    cursor: pointer;
-    transition: all 0.2s;
-    background: var(--border);
-    color: var(--text);
-  }
-
-  .result-close:hover { background: var(--muted); }
-
-  /* Stats bar */
-  .stats-bar {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-
-  .stat-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 10px;
-    text-align: center;
-  }
-
-  .stat-num {
-    font-size: 24px;
-    font-weight: 800;
-    font-family: 'Space Mono', monospace;
-    color: var(--accent);
-    display: block;
-    letter-spacing: -1px;
-  }
-
-  .stat-label {
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 2px;
-    display: block;
-  }
-
-  /* Loading state */
-  .loading-wrap {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 20px;
-    font-size: 13px;
-    font-family: 'Space Mono', monospace;
-    color: var(--accent);
-  }
-
-  .loading-wrap.show { display: flex; }
-
-  .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Log */
-  .log-title {
-    font-size: 11px;
-    font-family: 'Space Mono', monospace;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .log-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .log-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 12px;
-    animation: slideIn 0.3s ease;
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-10px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-
-  .log-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .log-item.checked_in .log-dot { background: var(--success); }
-  .log-item.duplicate .log-dot { background: var(--warning); }
-  .log-item.not_found .log-dot, .log-item.error .log-dot { background: var(--danger); }
-  .log-item.waitlist .log-dot { background: var(--info); }
-
-  .log-name {
-    flex: 1;
-    font-weight: 600;
-    color: var(--text);
-    font-family: 'Space Mono', monospace;
-  }
-
-  .log-time {
-    font-size: 10px;
-    color: var(--muted);
-    font-family: 'Space Mono', monospace;
-  }
-
-  /* Camera hint */
-  .hint {
-    text-align: center;
-    font-size: 12px;
-    color: var(--muted);
-    font-family: 'Space Mono', monospace;
-    padding: 12px;
-    animation: blink 3s ease-in-out infinite;
-  }
-
-  @keyframes blink {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
-  }
-
-  /* Scan button for upload */
-  .scan-upload-btn {
-    width: 100%;
-    padding: 16px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border: none;
-    border-radius: 12px;
-    color: #000;
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 15px;
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: 20px;
-    display: none;
-    letter-spacing: 0.5px;
-  }
-
-  .scan-upload-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-  .scan-upload-btn.show { display: block; }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-</style>
-</head>
-<body>
-
-<div class="container">
-
-  <!-- Header -->
-  <div class="header">
-    <div class="logo">
-      <div class="logo-icon">🎫</div>
-      <div class="logo-text">CHECKIN PRO</div>
-    </div>
-    <div class="status-dot">
-      <div class="dot" id="conn-dot"></div>
-      <span id="conn-label">LIVE</span>
-    </div>
-  </div>
-
-  <!-- Gate Selector -->
-  <div class="gate-bar">
-    <span class="gate-label">🚪 Gate</span>
-    <select class="gate-select" id="gate-select">
-      <option value="main-entrance">Main Entrance</option>
-      <option value="vip-entrance">VIP Entrance</option>
-      <option value="staff-entrance">Staff Entrance</option>
-      <option value="back-entrance">Back Entrance</option>
-    </select>
-  </div>
-
-  <!-- Stats -->
-  <div class="stats-bar">
-    <div class="stat-card">
-      <span class="stat-num" id="stat-in">0</span>
-      <span class="stat-label">Checked In</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-num" id="stat-dup" style="color:var(--warning)">0</span>
-      <span class="stat-label">Duplicates</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-num" id="stat-err" style="color:var(--danger)">0</span>
-      <span class="stat-label">Not Found</span>
-    </div>
-  </div>
-
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab active" id="tab-camera" onclick="switchTab('camera')">
-      📷 Camera Scan
-    </button>
-    <button class="tab" id="tab-upload" onclick="switchTab('upload')">
-      🖼️ Image Upload
-    </button>
-  </div>
-
-  <!-- Camera Scanner -->
-  <div id="camera-section">
-    <div class="scanner-wrap">
-      <div id="reader"></div>
-      <div class="scan-overlay">
-        <div class="scan-frame">
-          <span></span>
-          <div class="scan-line"></div>
-        </div>
-      </div>
-    </div>
-    <div class="hint">Hold QR code steady inside the frame</div>
-  </div>
-
-  <!-- Upload Section -->
-  <div id="upload-section" style="display:none">
-    <div class="upload-area active-tab" id="drop-zone" onclick="document.getElementById('file-input').click()">
-      <div class="upload-icon">📤</div>
-      <div class="upload-title">Upload QR Code Image</div>
-      <div class="upload-sub">Tap to select from gallery<br>or drag & drop image here</div>
-      <button class="upload-btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
-        Choose Image
-      </button>
-    </div>
-    <input type="file" id="file-input" accept="image/*" onchange="handleFileUpload(event)">
-
-    <div id="preview-wrap">
-      <img id="preview-img" alt="QR Preview">
-      <div class="preview-clear" onclick="clearPreview()">✕</div>
-    </div>
-
-    <button class="scan-upload-btn" id="scan-btn" onclick="scanUploadedImage()">
-      🔍 Scan This QR Code
-    </button>
-  </div>
-
-  <!-- Loading -->
-  <div class="loading-wrap" id="loading">
-    <div class="spinner"></div>
-    <span>Verifying with server...</span>
-  </div>
-
-  <!-- Log -->
-  <div class="log-title">
-    <span>⚡</span>
-    Recent Scans
-  </div>
-  <div class="log-list" id="log-list">
-    <div style="text-align:center;padding:20px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace">
-      No scans yet — start scanning!
-    </div>
-  </div>
-
-</div>
-
-<!-- Result Overlay -->
-<div class="result-overlay" id="result-overlay" onclick="closeResult()">
-  <div class="result-card" id="result-card" onclick="event.stopPropagation()">
-    <span class="result-emoji" id="result-emoji"></span>
-    <div class="result-status" id="result-status"></div>
-    <div class="result-name" id="result-name"></div>
-    <div class="result-detail" id="result-detail"></div>
-    <button class="result-close" onclick="closeResult()">Tap to Continue Scanning</button>
-  </div>
-</div>
-
-<script>
-  // ═══════════════════════════════════════════
-  // CONFIG — Update these before event day
-  // ═══════════════════════════════════════════
-  const N8N_WEBHOOK = 'https://team497.app.n8n.cloud/webhook-test/checkin';
-  const AUTH_KEY = 'project'; // x-checkin-key header value
-
-  // ═══════════════════════════════════════════
-  // STATE
-  // ═══════════════════════════════════════════
-  let currentTab = 'camera';
-  let uploadedFile = null;
-  let cooldown = false;
-  let lastScanned = '';
-  let html5QrCode = null;
-  let cameraStarted = false;
-
-  // Stats
-  let stats = { in: 0, dup: 0, err: 0 };
-
-  // ═══════════════════════════════════════════
-  // TAB SWITCHING
-  // ═══════════════════════════════════════════
-  function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById('tab-camera').classList.toggle('active', tab === 'camera');
-    document.getElementById('tab-upload').classList.toggle('active', tab === 'upload');
-    document.getElementById('camera-section').style.display = tab === 'camera' ? 'block' : 'none';
-    document.getElementById('upload-section').style.display = tab === 'upload' ? 'block' : 'none';
-
-    if (tab === 'camera' && !cameraStarted) {
-      startCamera();
+import { useState, useRef, useCallback, useEffect } from "react";
+import jsQR from "jsqr";
+import { Camera, Upload, ScanLine, Copy, ExternalLink, X, CheckCircle2, AlertCircle } from "lucide-react";
+
+type ScanMode = "camera" | "upload";
+type ScanResult = {
+  data: string;
+  location: { x: number; y: number; width: number; height: number } | null;
+};
+
+const Index = () => {
+  const [mode, setMode] = useState<ScanMode>("upload");
+  const [result, setResult] = useState<ScanResult | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
-    if (tab === 'upload' && cameraStarted && html5QrCode) {
-      html5QrCode.stop().catch(() => {});
-      cameraStarted = false;
+    cancelAnimationFrame(animFrameRef.current);
+    setCameraActive(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    setResult(null);
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraActive(true);
+        scanCameraFrame();
+      }
+    } catch {
+      setError("Camera access denied. Please allow camera permission.");
     }
-  }
+  }, []);
 
-  // ═══════════════════════════════════════════
-  // CAMERA SCANNER
-  // ═══════════════════════════════════════════
-  function startCamera() {
-    html5QrCode = new Html5Qrcode('reader');
-    html5QrCode.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
-      async (decodedText) => {
-        if (cooldown || decodedText === lastScanned) return;
-        cooldown = true;
-        lastScanned = decodedText;
-        await processToken(decodedText);
-        setTimeout(() => { cooldown = false; }, 3000);
-      },
-      () => {} // ignore errors
-    ).then(() => {
-      cameraStarted = true;
-    }).catch(err => {
-      document.getElementById('camera-section').innerHTML =
-        `<div style="text-align:center;padding:40px;color:var(--danger);font-family:'Space Mono',monospace;font-size:13px;background:var(--surface);border-radius:16px;border:1px solid var(--border)">
-          ⚠️ Camera access denied<br><br>
-          <span style="color:var(--muted)">Please allow camera permission<br>or use Image Upload tab</span>
-        </div>`;
-    });
-  }
+  const scanCameraFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      animFrameRef.current = requestAnimationFrame(scanCameraFrame);
+      return;
+    }
 
-  // ═══════════════════════════════════════════
-  // IMAGE UPLOAD SCANNER
-  // ═══════════════════════════════════════════
-  function handleFileUpload(event) {
-    const file = event.target.files[0];
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+    if (code) {
+      const loc = code.location;
+      const x = Math.min(loc.topLeftCorner.x, loc.bottomLeftCorner.x);
+      const y = Math.min(loc.topLeftCorner.y, loc.topRightCorner.y);
+      const w = Math.max(loc.topRightCorner.x, loc.bottomRightCorner.x) - x;
+      const h = Math.max(loc.bottomLeftCorner.y, loc.bottomRightCorner.y) - y;
+
+      // Draw box on canvas
+      ctx.strokeStyle = "hsl(160, 84%, 44%)";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x - 8, y - 8, w + 16, h + 16);
+
+      // Corner accents
+      const cornerLen = 20;
+      ctx.lineWidth = 6;
+      // Top-left
+      ctx.beginPath(); ctx.moveTo(x - 8, y - 8 + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x - 8 + cornerLen, y - 8); ctx.stroke();
+      // Top-right
+      ctx.beginPath(); ctx.moveTo(x + w + 8 - cornerLen, y - 8); ctx.lineTo(x + w + 8, y - 8); ctx.lineTo(x + w + 8, y - 8 + cornerLen); ctx.stroke();
+      // Bottom-left
+      ctx.beginPath(); ctx.moveTo(x - 8, y + h + 8 - cornerLen); ctx.lineTo(x - 8, y + h + 8); ctx.lineTo(x - 8 + cornerLen, y + h + 8); ctx.stroke();
+      // Bottom-right
+      ctx.beginPath(); ctx.moveTo(x + w + 8 - cornerLen, y + h + 8); ctx.lineTo(x + w + 8, y + h + 8); ctx.lineTo(x + w + 8, y + h + 8 - cornerLen); ctx.stroke();
+
+      setResult({ data: code.data, location: { x, y, width: w, height: h } });
+      stopCamera();
+      return;
+    }
+
+    animFrameRef.current = requestAnimationFrame(scanCameraFrame);
+  }, [stopCamera]);
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, [stopCamera]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    uploadedFile = file;
+    setResult(null);
+    setError(null);
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      document.getElementById('preview-img').src = e.target.result;
-      document.getElementById('preview-wrap').style.display = 'block';
-      document.getElementById('drop-zone').style.display = 'none';
-      document.getElementById('scan-btn').classList.add('show');
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setUploadedImage(dataUrl);
+
+      const img = new Image();
+      img.onload = () => {
+        imageRef.current = img;
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
-  }
+  };
 
-  async function scanUploadedImage() {
-    if (!uploadedFile) return;
+  const scanUploadedImage = () => {
+    const img = imageRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
 
-    // Remove old temp div if exists
-    const old = document.getElementById('temp-reader');
-    if (old) old.remove();
+    setIsScanning(true);
+    setError(null);
 
-    // Create fresh temp div
-    const tempDiv = document.createElement('div');
-    tempDiv.id = 'temp-reader';
-    tempDiv.style.display = 'none';
-    document.body.appendChild(tempDiv);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
 
-    document.getElementById('loading').classList.add('show');
-    document.getElementById('scan-btn').disabled = true;
-    document.getElementById('scan-btn').textContent = '⏳ Scanning...';
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
 
-    try {
-      const scanner = new Html5Qrcode('temp-reader', { verbose: false });
-      const result = await scanner.scanFile(uploadedFile, true);
-      tempDiv.remove();
-      document.getElementById('loading').classList.remove('show');
-      document.getElementById('scan-btn').disabled = false;
-      document.getElementById('scan-btn').textContent = '🔍 Scan This QR Code';
-      await processToken(result);
-    } catch (err) {
-      tempDiv.remove();
-      document.getElementById('loading').classList.remove('show');
-      document.getElementById('scan-btn').disabled = false;
-      document.getElementById('scan-btn').textContent = '🔍 Scan This QR Code';
-      showResult({
-        status: 'error',
-        name: 'Scan Failed',
-        message: 'No QR code found in this image. Please try a clearer photo.'
-      });
-    }
-  }
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-  function clearPreview() {
-    uploadedFile = null;
-    document.getElementById('preview-wrap').style.display = 'none';
-    document.getElementById('drop-zone').style.display = 'flex';
-    document.getElementById('scan-btn').classList.remove('show');
-    document.getElementById('file-input').value = '';
-  }
+    setTimeout(() => {
+      if (code) {
+        const loc = code.location;
+        const x = Math.min(loc.topLeftCorner.x, loc.bottomLeftCorner.x);
+        const y = Math.min(loc.topLeftCorner.y, loc.topRightCorner.y);
+        const w = Math.max(loc.topRightCorner.x, loc.bottomRightCorner.x) - x;
+        const h = Math.max(loc.bottomLeftCorner.y, loc.bottomRightCorner.y) - y;
 
-  // Drag & Drop
-  const dropZone = document.getElementById('drop-zone');
-  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const fakeEvent = { target: { files: [file] } };
-      handleFileUpload(fakeEvent);
-    }
-  });
+        // Draw the image again and overlay box
+        ctx.drawImage(img, 0, 0);
+        ctx.strokeStyle = "hsl(160, 84%, 44%)";
+        ctx.lineWidth = Math.max(4, Math.min(img.width, img.height) * 0.008);
+        ctx.strokeRect(x - 10, y - 10, w + 20, h + 20);
 
-  // ═══════════════════════════════════════════
-  // PROCESS TOKEN → WEBHOOK
-  // ═══════════════════════════════════════════
-  async function processToken(token) {
-    const gate = document.getElementById('gate-select').value;
-    document.getElementById('loading').classList.add('show');
+        const cornerLen = Math.max(15, Math.min(w, h) * 0.15);
+        ctx.lineWidth = Math.max(6, Math.min(img.width, img.height) * 0.012);
+        ctx.beginPath(); ctx.moveTo(x - 10, y - 10 + cornerLen); ctx.lineTo(x - 10, y - 10); ctx.lineTo(x - 10 + cornerLen, y - 10); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + w + 10 - cornerLen, y - 10); ctx.lineTo(x + w + 10, y - 10); ctx.lineTo(x + w + 10, y - 10 + cornerLen); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x - 10, y + h + 10 - cornerLen); ctx.lineTo(x - 10, y + h + 10); ctx.lineTo(x - 10 + cornerLen, y + h + 10); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + w + 10 - cornerLen, y + h + 10); ctx.lineTo(x + w + 10, y + h + 10); ctx.lineTo(x + w + 10, y + h + 10 - cornerLen); ctx.stroke();
 
-    try {
-      const res = await fetch(N8N_WEBHOOK, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-checkin-key': AUTH_KEY
-        },
-        body: JSON.stringify({
-          token: token,
-          gate: gate,
-          timestamp: new Date().toISOString()
-        })
-      });
+        // Semi-transparent overlay outside QR
+        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+        ctx.fillRect(0, 0, canvas.width, y - 10);
+        ctx.fillRect(0, y - 10, x - 10, h + 20);
+        ctx.fillRect(x + w + 10, y - 10, canvas.width - x - w - 10, h + 20);
+        ctx.fillRect(0, y + h + 10, canvas.width, canvas.height - y - h - 10);
 
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        data = { status: 'error', name: 'Server Error', message: 'Invalid response from server' };
+        setResult({ data: code.data, location: { x, y, width: w, height: h } });
+      } else {
+        setError("No QR code found in this image.");
       }
-
-      document.getElementById('loading').classList.remove('show');
-      showResult(data);
-      updateStats(data.status);
-      addLog(data);
-
-    } catch (err) {
-      document.getElementById('loading').classList.remove('show');
-      showResult({ status: 'error', name: 'Connection Failed', message: 'Cannot reach server. Check your internet.' });
-      addLog({ status: 'error', name: 'Connection Error' });
-    }
-  }
-
-  // ═══════════════════════════════════════════
-  // SHOW RESULT
-  // ═══════════════════════════════════════════
-  const resultConfig = {
-    checked_in: { emoji: '✅', label: 'WELCOME IN!', autoClose: 3000 },
-    duplicate:  { emoji: '⚠️', label: 'ALREADY CHECKED IN', autoClose: 4000 },
-    waitlist:   { emoji: '🔵', label: 'WAITLIST — CHECK PLANNER', autoClose: 5000 },
-    not_found:  { emoji: '❌', label: 'NOT ON GUEST LIST', autoClose: 4000 },
-    cancelled:  { emoji: '🚫', label: 'BOOKING CANCELLED', autoClose: 4000 },
-    error:      { emoji: '⚡', label: 'CONNECTION ERROR', autoClose: 4000 },
+      setIsScanning(false);
+    }, 500);
   };
 
-  let autoCloseTimer;
-
-  function showResult(data) {
-    const status = data.status || 'error';
-    const cfg = resultConfig[status] || resultConfig.error;
-
-    const overlay = document.getElementById('result-overlay');
-    const card = document.getElementById('result-card');
-
-    // Reset classes
-    overlay.className = 'result-overlay show ' + status;
-    card.className = 'result-card ' + status;
-
-    document.getElementById('result-emoji').textContent = cfg.emoji;
-    document.getElementById('result-status').textContent = cfg.label;
-    document.getElementById('result-name').textContent = data.name || '';
-
-    let detail = '';
-    if (data.company) detail += `🏢 ${data.company}\n`;
-    if (data.table) detail += `🪑 Table ${data.table}\n`;
-    if (data.dietary) detail += `🍽️ ${data.dietary}\n`;
-    if (data.message) detail += `\n${data.message}`;
-    if (data.checkedInAt) detail += `\nFirst checked in: ${formatTime(data.checkedInAt)}`;
-
-    document.getElementById('result-detail').textContent = detail.trim();
-
-    clearTimeout(autoCloseTimer);
-    autoCloseTimer = setTimeout(closeResult, cfg.autoClose);
-
-    // Vibrate on mobile
-    if (navigator.vibrate) {
-      if (status === 'checked_in') navigator.vibrate([100, 50, 100]);
-      else if (status === 'duplicate') navigator.vibrate([300]);
-      else if (status === 'not_found' || status === 'cancelled') navigator.vibrate([500]);
+  const copyResult = () => {
+    if (result) {
+      navigator.clipboard.writeText(result.data);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
-  }
-
-  function closeResult() {
-    clearTimeout(autoCloseTimer);
-    document.getElementById('result-overlay').classList.remove('show');
-    if (currentTab === 'upload') clearPreview();
-  }
-
-  // ═══════════════════════════════════════════
-  // STATS & LOG
-  // ═══════════════════════════════════════════
-  function updateStats(status) {
-    if (status === 'checked_in') stats.in++;
-    else if (status === 'duplicate') stats.dup++;
-    else if (status === 'not_found' || status === 'error' || status === 'cancelled') stats.err++;
-
-    document.getElementById('stat-in').textContent = stats.in;
-    document.getElementById('stat-dup').textContent = stats.dup;
-    document.getElementById('stat-err').textContent = stats.err;
-  }
-
-  function addLog(data) {
-    const list = document.getElementById('log-list');
-
-    // Remove placeholder
-    const placeholder = list.querySelector('div');
-    if (placeholder) list.innerHTML = '';
-
-    const item = document.createElement('div');
-    item.className = 'log-item ' + (data.status || 'error');
-    item.innerHTML = `
-      <div class="log-dot"></div>
-      <div class="log-name">${data.name || 'Unknown'}</div>
-      <div class="log-time">${formatTime(new Date())}</div>
-    `;
-    list.insertBefore(item, list.firstChild);
-
-    // Keep only last 20
-    while (list.children.length > 20) list.removeChild(list.lastChild);
-  }
-
-  function formatTime(date) {
-    if (!date) return '';
-    const d = new Date(date);
-    return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
-
-  // ═══════════════════════════════════════════
-  // INIT
-  // ═══════════════════════════════════════════
-  window.onload = () => {
-    startCamera();
   };
-</script>
 
-</body>
-</html>
+  const isUrl = (s: string) => {
+    try { new URL(s); return true; } catch { return false; }
+  };
+
+  const resetAll = () => {
+    stopCamera();
+    setResult(null);
+    setUploadedImage(null);
+    setError(null);
+    setIsScanning(false);
+    imageRef.current = null;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+
+  const switchMode = (newMode: ScanMode) => {
+    resetAll();
+    setMode(newMode);
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
+      {/* Header */}
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <ScanLine className="w-5 h-5 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold text-foreground font-mono tracking-tight">
+            QR Scanner
+          </h1>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Scan QR codes with your camera or upload an image
+        </p>
+      </div>
+
+      {/* Mode Toggle */}
+      <div className="flex bg-secondary rounded-lg p-1 mb-8 gap-1">
+        <button
+          onClick={() => switchMode("camera")}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-all ${
+            mode === "camera"
+              ? "bg-primary text-primary-foreground shadow-lg"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Camera className="w-4 h-4" />
+          Camera
+        </button>
+        <button
+          onClick={() => switchMode("upload")}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-all ${
+            mode === "upload"
+              ? "bg-primary text-primary-foreground shadow-lg"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Upload className="w-4 h-4" />
+          Upload
+        </button>
+      </div>
+
+      {/* Scanner Area */}
+      <div className="w-full max-w-lg">
+        <div className="bg-card border border-border rounded-xl overflow-hidden scanner-glow">
+          {/* Camera Mode */}
+          {mode === "camera" && (
+            <div className="relative">
+              {!cameraActive && !result && (
+                <div className="aspect-[4/3] flex flex-col items-center justify-center gap-4 bg-secondary/30">
+                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-primary/30 flex items-center justify-center">
+                    <Camera className="w-8 h-8 text-primary/50" />
+                  </div>
+                  <button
+                    onClick={startCamera}
+                    className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity"
+                  >
+                    Start Camera
+                  </button>
+                </div>
+              )}
+              <video
+                ref={videoRef}
+                className={`w-full aspect-[4/3] object-cover ${cameraActive ? "block" : "hidden"}`}
+                playsInline
+                muted
+              />
+              {cameraActive && (
+                <div className="absolute inset-0 pointer-events-none">
+                  {/* Scan line animation */}
+                  <div className="absolute left-[15%] right-[15%] top-[15%] bottom-[15%]">
+                    <div className="relative w-full h-full">
+                      <div className="absolute left-0 right-0 h-1 scan-line animate-scan" />
+                      {/* Corner brackets */}
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-primary" />
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-primary" />
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-primary" />
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Canvas for camera result display */}
+              <canvas
+                ref={result && mode === "camera" ? canvasRef : undefined}
+                className={result && mode === "camera" ? "w-full" : "hidden"}
+              />
+            </div>
+          )}
+
+          {/* Upload Mode */}
+          {mode === "upload" && (
+            <div>
+              {!uploadedImage && !result && (
+                <label className="aspect-[4/3] flex flex-col items-center justify-center gap-4 bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors">
+                  <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-primary/30 flex items-center justify-center pulse-border">
+                    <Upload className="w-8 h-8 text-primary/50" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-foreground">Click to upload image</p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP supported</p>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </label>
+              )}
+
+              {/* Show uploaded image before scan, canvas after scan */}
+              {uploadedImage && (
+                <div className="relative">
+                  <img
+                    src={uploadedImage}
+                    alt="Uploaded"
+                    className={`w-full object-contain max-h-[400px] bg-secondary/20 ${result ? "hidden" : "block"}`}
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className={`w-full object-contain ${result ? "block" : "hidden"}`}
+                  />
+                  <button
+                    onClick={resetAll}
+                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-background/80 backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Scan Button for Upload Mode */}
+        {mode === "upload" && uploadedImage && !result && (
+          <button
+            onClick={scanUploadedImage}
+            disabled={isScanning}
+            className="w-full mt-4 py-3.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isScanning ? (
+              <>
+                <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <ScanLine className="w-4 h-4" />
+                Scan QR Code
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
+
+        {/* Result */}
+        {result && (
+          <div className="mt-4 bg-card border border-primary/20 rounded-xl p-5 scanner-glow">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="w-5 h-5 text-primary" />
+              <span className="text-sm font-semibold text-primary">QR Code Detected</span>
+            </div>
+            <div className="bg-secondary rounded-lg p-4 font-mono text-sm text-foreground break-all">
+              {result.data}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={copyResult}
+                className="flex-1 py-2.5 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-accent transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </>
+                )}
+              </button>
+              {isUrl(result.data) && (
+                <a
+                  href={result.data}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Open Link
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Scan Again */}
+        {(result || error) && (
+          <button
+            onClick={resetAll}
+            className="w-full mt-3 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium hover:bg-accent transition-colors"
+          >
+            Scan Another
+          </button>
+        )}
+      </div>
+
+      {/* Footer */}
+      <p className="mt-12 text-xs text-muted-foreground font-mono">
+        Built with jsQR • All processing happens locally
+      </p>
+
+      {/* Hidden canvas for camera mode processing */}
+      {mode === "camera" && !result && (
+        <canvas ref={canvasRef} className="hidden" />
+      )}
+    </div>
+  );
+};
+
+export default Index;
