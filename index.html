@@ -870,22 +870,37 @@
   async function scanUploadedImage() {
     if (!uploadedFile) return;
 
-    const scanner = new Html5Qrcode('temp-reader', { verbose: false });
+    // Remove old temp div if exists
+    const old = document.getElementById('temp-reader');
+    if (old) old.remove();
+
+    // Create fresh temp div
     const tempDiv = document.createElement('div');
     tempDiv.id = 'temp-reader';
     tempDiv.style.display = 'none';
     document.body.appendChild(tempDiv);
 
+    document.getElementById('loading').classList.add('show');
+    document.getElementById('scan-btn').disabled = true;
+    document.getElementById('scan-btn').textContent = '⏳ Scanning...';
+
     try {
-      const result = await scanner.scanFile(uploadedFile, false);
-      document.body.removeChild(tempDiv);
+      const scanner = new Html5Qrcode('temp-reader', { verbose: false });
+      const result = await scanner.scanFile(uploadedFile, true);
+      tempDiv.remove();
+      document.getElementById('loading').classList.remove('show');
+      document.getElementById('scan-btn').disabled = false;
+      document.getElementById('scan-btn').textContent = '🔍 Scan This QR Code';
       await processToken(result);
     } catch (err) {
-      document.body.removeChild(tempDiv);
+      tempDiv.remove();
+      document.getElementById('loading').classList.remove('show');
+      document.getElementById('scan-btn').disabled = false;
+      document.getElementById('scan-btn').textContent = '🔍 Scan This QR Code';
       showResult({
         status: 'error',
         name: 'Scan Failed',
-        detail: 'No QR code found in image.\nPlease try a clearer photo.'
+        message: 'No QR code found in this image. Please try a clearer photo.'
       });
     }
   }
