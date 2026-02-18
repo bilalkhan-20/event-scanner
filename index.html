@@ -570,6 +570,94 @@
       border-color: rgba(91,141,239,0.3);
     }
     .nav-btn.upload-btn:hover .nav-icon { background: rgba(91,141,239,0.2); }
+
+    /* ── Upload Result Overlay ── */
+    #upload-result {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 25;
+      background: var(--bg);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 40px 32px;
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+    #upload-result.show { display: flex; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+
+    .result-icon-ring {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 42px;
+    }
+    .result-icon-ring.success { background: var(--green-dim); border: 2px solid rgba(0,232,122,0.3); }
+    .result-icon-ring.error   { background: var(--red-dim);   border: 2px solid rgba(255,79,79,0.3); }
+    .result-icon-ring.warning { background: var(--amber-dim); border: 2px solid rgba(255,184,48,0.3); }
+
+    .result-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .result-title.success { color: var(--green); }
+    .result-title.error   { color: var(--red); }
+    .result-title.warning { color: var(--amber); }
+
+    .result-value {
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 12px 20px;
+      width: 100%;
+      max-width: 320px;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+
+    .result-status {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    .result-time {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 320px;
+      margin-top: 8px;
+    }
+
+    .result-btn {
+      flex: 1;
+      padding: 13px;
+      border-radius: 10px;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .result-btn:hover { opacity: 0.85; }
+    .result-btn.primary { background: var(--green); color: #000; }
+    .result-btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border2); }
+
   </style>
 </head>
 <body>
@@ -599,6 +687,24 @@
       <div class="divider-row">or</div>
       <button id="upload-start-btn" onclick="document.getElementById('img-upload-hidden').click()">
         <span>🖼️</span> Upload QR Image
+      </button>
+    </div>
+  </div>
+
+
+  <!-- Upload Result Overlay -->
+  <div id="upload-result">
+    <div class="result-icon-ring" id="result-ring">✅</div>
+    <div class="result-title" id="result-title">Scan Successful</div>
+    <div class="result-value" id="result-value">—</div>
+    <div class="result-status" id="result-status">—</div>
+    <div class="result-time" id="result-time">—</div>
+    <div class="result-actions">
+      <button class="result-btn secondary" onclick="closeResult(); document.getElementById('img-upload-hidden').click()">
+        📂 Scan Another
+      </button>
+      <button class="result-btn primary" onclick="closeResult()">
+        ✓ Done
       </button>
     </div>
   </div>
@@ -690,7 +796,7 @@
   /* ════════════════════════════════════════════════
      ⚙️  CONFIGURATION — Edit these values
      ════════════════════════════════════════════════ */
-  const N8N_WEBHOOK_URL    = "https://team497.app.n8n.cloud/webhook-test/checkin";
+  const N8N_WEBHOOK_URL    = "https://team497.app.n8n.cloud/webhook/checkin";
   const CHECKIN_SECRET_KEY = "project";
   /* ════════════════════════════════════════════════ */
 
@@ -780,6 +886,20 @@
     scanLog.unshift({ data, time: timeStr, ok: !isError });
     showToast(data, responseMsg, timeStr, isError ? 'error' : 'success');
 
+    // If upload result screen is visible, update its status too
+    const resultScreen = document.getElementById('upload-result');
+    if (resultScreen.classList.contains('show')) {
+      document.getElementById('result-status').textContent = responseMsg;
+      if (isError) {
+        document.getElementById('result-ring').textContent  = '❌';
+        document.getElementById('result-ring').className    = 'result-icon-ring error';
+        document.getElementById('result-title').textContent = 'Check-In Failed';
+        document.getElementById('result-title').className   = 'result-title error';
+      } else {
+        document.getElementById('result-status').textContent = '✓ ' + responseMsg;
+      }
+    }
+
     setTimeout(() => { cooldown = false; }, 2000);
   }
 
@@ -845,31 +965,82 @@
     updateStats();
   }
 
+  // ── Show full-screen result for image upload ──
+  function showUploadResult(type, title, value, status, time) {
+    const ring   = document.getElementById('result-ring');
+    const titleEl= document.getElementById('result-title');
+    const valueEl= document.getElementById('result-value');
+    const statEl = document.getElementById('result-status');
+    const timeEl = document.getElementById('result-time');
+    const icons  = { success: '✅', error: '❌', warning: '⚠️' };
+
+    ring.textContent   = icons[type];
+    ring.className     = 'result-icon-ring ' + type;
+    titleEl.textContent= title;
+    titleEl.className  = 'result-title ' + type;
+    valueEl.textContent= value;
+    statEl.textContent = status;
+    timeEl.textContent = time;
+
+    // Hide start screen & show result
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('upload-result').classList.add('show');
+  }
+
+  function closeResult() {
+    document.getElementById('upload-result').classList.remove('show');
+  }
+
   function scanFromImage(event) {
     const file = event.target.files[0];
     if (!file) return;
+    cooldown = false;
+
     const reader = new FileReader();
     reader.onload = function(e) {
       const img = new Image();
       img.onload = function() {
-        const offCanvas  = document.createElement('canvas');
-        offCanvas.width  = img.width;
-        offCanvas.height = img.height;
-        const offCtx     = offCanvas.getContext('2d');
-        offCtx.drawImage(img, 0, 0);
-        const imageData  = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
-        const code       = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-        if (code) {
-          if (!cooldown) onScan(code.data);
-        } else {
-          const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          showToast('No QR Code Found', 'Could not detect a QR code in this image', timeStr, 'warning');
+        // Try multiple sizes — jsQR works best at 600-1000px wide
+        const sizes = [img.width, 800, 600, 1000, 400, 1200];
+        let code = null;
+        for (const tw of sizes) {
+          const scale = Math.min(1, tw / img.width);
+          const w = Math.max(1, Math.round(img.width  * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const cx = c.getContext('2d');
+          cx.imageSmoothingEnabled = false;
+          cx.drawImage(img, 0, 0, w, h);
+          const d = cx.getImageData(0, 0, w, h);
+          code = jsQR(d.data, d.width, d.height, { inversionAttempts: 'attemptBoth' });
+          if (code) break;
         }
+
+        const timeStr = new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+
+        if (code) {
+          // Show result screen first (visible immediately)
+          showUploadResult('success', 'QR Scan Successful', code.data, 'Sending to server...', timeStr);
+          // Then send to webhook
+          onScan(code.data);
+        } else {
+          showUploadResult('warning', 'No QR Found', 'No QR code detected in this image',
+            'Try a clearer or higher resolution image', timeStr);
+        }
+      };
+      img.onerror = function() {
+        const timeStr = new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        showUploadResult('error', 'Image Error', 'Could not load this image', '', timeStr);
       };
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
-    event.target.value = '';
+    setTimeout(() => { event.target.value = ''; }, 500);
   }
 </script>
 </body>
